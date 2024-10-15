@@ -2,6 +2,7 @@ import * as cdk from 'aws-cdk-lib';
 import { Construct } from 'constructs';
 import * as apigateway from 'aws-cdk-lib/aws-apigateway';
 import * as logs from 'aws-cdk-lib/aws-logs';
+import * as iam from 'aws-cdk-lib/aws-iam';
 
 export class RouterGatewayStack extends cdk.Stack {
   constructor(scope: Construct, id: string, props?: cdk.StackProps) {
@@ -12,7 +13,7 @@ export class RouterGatewayStack extends cdk.Stack {
       retention: logs.RetentionDays.ONE_WEEK,  // Log retention policy
     });
 
-    // Create the API Gateway
+    // Create the API Gateway with access logging and execution logging enabled
     const api = new apigateway.RestApi(this, 'RouterApi', {
       restApiName: 'RouterGatewayAPI',
       description: 'API Gateway that proxies requests to router.robotlab-x.com',
@@ -29,14 +30,14 @@ export class RouterGatewayStack extends cdk.Stack {
           status: true,
           user: true,
         }),
-        // Enable execution logging (INFO level)
         loggingLevel: apigateway.MethodLoggingLevel.INFO,
         dataTraceEnabled: true, // Logs full request/response data
       },
     });
 
     // Define the proxy integration to forward any request
-    const integration = new apigateway.HttpIntegration('https://router.robotlab-x.com/{proxy}', {
+    // const integration = new apigateway.HttpIntegration('https://router.robotlab-x.com/{proxy}', {
+    const integration = new apigateway.HttpIntegration('http://router.robotlab-x.com/{proxy}', {
       proxy: true,
       options: {
         requestParameters: {
