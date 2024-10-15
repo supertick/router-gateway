@@ -1,24 +1,32 @@
 import * as cdk from 'aws-cdk-lib';
 import { Construct } from 'constructs';
 import * as apigateway from 'aws-cdk-lib/aws-apigateway';
+import * as lambda from 'aws-cdk-lib/aws-lambda';
 import * as logs from 'aws-cdk-lib/aws-logs';
-import * as iam from 'aws-cdk-lib/aws-iam';
+import * as path from 'path';
 
 export class RouterGatewayStack extends cdk.Stack {
   constructor(scope: Construct, id: string, props?: cdk.StackProps) {
     super(scope, id, props);
+
+    // Define the backend proxy Lambda function
+    const backendProxyFunction = new lambda.Function(this, 'BackendProxyLambda', {
+      runtime: lambda.Runtime.NODEJS_18_X,
+      code: lambda.Code.fromAsset(path.join(__dirname, '../lambda')), // Path to lambda folder
+      handler: 'backend-proxy-lambda.handler',  // File name and function handler
+    });
 
     // Create a CloudWatch Log Group for API Gateway logs
     const logGroup = new logs.LogGroup(this, 'ApiGatewayAccessLogs', {
       retention: logs.RetentionDays.ONE_WEEK,  // Log retention policy
     });
 
-    // Create the API Gateway with access logging and execution logging enabled
+    // Create the API Gateway and integrate it with the Lambda function
     const api = new apigateway.RestApi(this, 'RouterApi', {
       restApiName: 'RouterGatewayAPI',
-      description: 'API Gateway that proxies requests to router.robotlab-x.com',
+      description: 'API Gateway that proxies requests based on paths',
       deployOptions: {
-        accessLogDestination: new apigateway.LogGroupLogDestination(logGroup),  // Enable access logging
+        accessLogDestination: new apigateway.LogGroupLogDestination(logGroup),
         accessLogFormat: apigateway.AccessLogFormat.jsonWithStandardFields({
           caller: true,
           httpMethod: true,
@@ -31,33 +39,14 @@ export class RouterGatewayStack extends cdk.Stack {
           user: true,
         }),
         loggingLevel: apigateway.MethodLoggingLevel.INFO,
-        dataTraceEnabled: true, // Logs full request/response data
+        dataTraceEnabled: true,  // Capture full request/response data for troubleshooting
       },
     });
 
-    // Define the proxy integration to forward any request
-    // const integration = new apigateway.HttpIntegration('https://router.robotlab-x.com/{proxy}', {
-    const integration = new apigateway.HttpIntegration('http://router.robotlab-x.com/{proxy}', {
-      proxy: true,
-      options: {
-        requestParameters: {
-          'integration.request.path.proxy': 'method.request.path.proxy',
-        },
-      },
-    });
-
-    // Add the ANY method to catch all HTTP methods and proxy the request
-    api.root.addMethod('ANY', integration, {
-      requestParameters: {
-        'method.request.path.proxy': true,
-      },
-    });
-
-    // Enable proxy for all sub-paths
-    api.root.addResource('{proxy+}').addMethod('ANY', integration, {
-      requestParameters: {
-        'method.request.path.proxy': true,
-      },
-    });
+    // Integrate all API Gateway requests with the Lambda function
+    const lambdaIntegration = new apigateway.LambdaIntegration(backendProxyFunction);
+    
+    // Define an API Gateway resource with the path '{proxy+}' to capture all requests
+    api.root.addResource('{proxy+}').addMethod('ANY', lambdaIntegration);
   }
 }
